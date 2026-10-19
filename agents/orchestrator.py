@@ -18,6 +18,7 @@ from .summary_agent import SummaryAgent
 from .task_agent import TaskAgent
 
 logger = logging.getLogger("uvicorn.error")
+URGENT_WORDS = re.compile(r"\b(?:urgent|urgently|asap|critical|important|high priority)\b", re.I)
 
 Action = Literal["create", "update", "complete", "delete", "list", "suggest", "summary", "unknown"]
 
@@ -101,7 +102,7 @@ class Orchestrator:
             client = OpenAI(
                 api_key=self._api_key,
                 timeout=self.MODEL_TIMEOUT_SECONDS,
-                max_retries=0,
+                max_retries=2,
             )
         # Plain JSON mode works with OpenAI and with OpenAI-compatible
         # providers such as Gemini (set OPENAI_BASE_URL).
@@ -118,7 +119,8 @@ class Orchestrator:
                         "priority (low, normal, high or null), task_reference (string or null), "
                         "needs_clarification (true or false). Return unknown and needs_clarification true "
                         "for ambiguity. Use ISO dates based on the supplied UTC date. References must "
-                        "preserve the user's exact task identifier or title."
+                        "preserve the user's exact task identifier or title. Words such as urgent, asap, "
+                        "important or critical mean priority high; no rush, whenever or someday mean priority low."
                     ),
                 },
                 {
@@ -131,6 +133,15 @@ class Orchestrator:
         if not content:
             raise ValueError("No structured intent was returned")
         parsed = json.loads(content)
+        if isinstance(parsed, dict) and parsed.get("priority") == "medium":
+            parsed["priority"] = "normal"
+        if (
+            isinstance(parsed, dict)
+            and parsed.get("action") == "create"
+            and parsed.get("priority") in (None, "normal")
+            and URGENT_WORDS.search(message)
+        ):
+            parsed["priority"] = "high"
         return self._validate_intent(parsed)
 
     @staticmethod

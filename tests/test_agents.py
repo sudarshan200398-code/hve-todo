@@ -231,6 +231,16 @@ def test_sdk_client_uses_bounded_timeout_and_disables_retries(tools, monkeypatch
     constructor.assert_called_once_with(
         api_key="configured-key",
         timeout=Orchestrator.MODEL_TIMEOUT_SECONDS,
-        max_retries=0,
+        max_retries=2,
     )
     parse.assert_called_once()
+
+def test_urgent_wording_sets_high_priority_when_model_omits_it(tools):
+    content = {"action": "create", "title": "call mom", "due_date": None, "priority": None,
+               "task_reference": None, "needs_clarification": False}
+    parse = Mock(return_value=_parsed(content))
+    result = Orchestrator(tools, api_key="test-key", model_client=_model_client(parse)).handle(
+        "remind me to call mom before the weekend, it's urgent"
+    )
+    assert result["mode"] == "ai"
+    assert result["task"].priority == "high"
