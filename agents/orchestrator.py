@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -14,6 +16,8 @@ from tools.repository import Priority, TaskTools
 from .planner_agent import PlannerAgent
 from .summary_agent import SummaryAgent
 from .task_agent import TaskAgent
+
+logger = logging.getLogger("uvicorn.error")
 
 Action = Literal["create", "update", "complete", "delete", "list", "suggest", "summary", "unknown"]
 
@@ -66,8 +70,9 @@ class Orchestrator:
             try:
                 intent = self._extract_intent(message)
                 mode = "ai"
-            except Exception:
+            except Exception as error:
                 # Provider, timeout, refusal, and invalid response all degrade safely.
+                logger.warning("LLM intent extraction failed, using fallback: %s: %s", type(error).__name__, error)
                 intent = None
 
         if intent is None:
@@ -98,17 +103,22 @@ class Orchestrator:
                 timeout=self.MODEL_TIMEOUT_SECONDS,
                 max_retries=0,
             )
-        # Chat Completions structured output works with OpenAI and with
-        # OpenAI-compatible providers such as Gemini (set OPENAI_BASE_URL).
-        result = client.beta.chat.completions.parse(
+        # Plain JSON mode works with OpenAI and with OpenAI-compatible
+        # providers such as Gemini (set OPENAI_BASE_URL).
+        result = client.chat.completions.create(
             model=self._model,
+            response_format={"type": "json_object"},
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "Extract a todo intent only. Do not execute actions. Return unknown and "
-                        "needs_clarification for ambiguity. Use ISO dates based on the supplied "
-                        "UTC date. References must preserve the user's exact task identifier or title."
+                        "Extract a todo intent only. Do not execute actions. Reply with one JSON object "
+                        "with exactly these keys: action (one of create, update, complete, delete, list, "
+                        "suggest, summary, unknown), title (string or null), due_date (YYYY-MM-DD or null), "
+                        "priority (low, normal, high or null), task_reference (string or null), "
+                        "needs_clarification (true or false). Return unknown and needs_clarification true "
+                        "for ambiguity. Use ISO dates based on the supplied UTC date. References must "
+                        "preserve the user's exact task identifier or title."
                     ),
                 },
                 {
@@ -116,11 +126,11 @@ class Orchestrator:
                     "content": f"UTC date: {self._today_provider().isoformat()}\nRequest: {message}",
                 },
             ],
-            response_format=AssistantIntent,
         )
-        parsed = result.choices[0].message.parsed if result.choices else None
-        if parsed is None:
+        content = result.choices[0].message.content if result.choices else None
+        if not content:
             raise ValueError("No structured intent was returned")
+        parsed = json.loads(content)
         return self._validate_intent(parsed)
 
     @staticmethod

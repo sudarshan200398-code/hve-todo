@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -8,13 +9,14 @@ from agents import AssistantIntent, Orchestrator, PlannerAgent, SummaryAgent, Ta
 from tools import TaskRepository, TaskTools
 
 
-def _model_client(parse):
-    """Fake OpenAI-compatible client exposing beta.chat.completions.parse."""
-    return SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(parse=parse))))
+def _model_client(create):
+    """Fake OpenAI-compatible client exposing chat.completions.create."""
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
 
 def _parsed(value):
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(parsed=value))])
+    data = value.model_dump() if hasattr(value, "model_dump") else value
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(data)))])
 
 
 @pytest.fixture
@@ -179,7 +181,7 @@ def test_mocked_structured_model_success_uses_ai_mode(tools):
     assert result["task"].title == "Model-created task"
     parse.assert_called_once()
     assert parse.call_args.kwargs["model"] == "gpt-4o-mini"
-    assert parse.call_args.kwargs["response_format"] is AssistantIntent
+    assert parse.call_args.kwargs["response_format"] == {"type": "json_object"}
 
 
 def test_model_error_falls_back_without_repeating_a_write(tools):
