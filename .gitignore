@@ -6,3 +6,8 @@ __pycache__/
 *.py[cod]
 *-wal
 *-shm
+# test coverage and SonarQube
+.coverage
+coverage.xml
+htmlcov/
+.scannerwork/

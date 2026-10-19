@@ -8,6 +8,15 @@ from agents import AssistantIntent, Orchestrator, PlannerAgent, SummaryAgent, Ta
 from tools import TaskRepository, TaskTools
 
 
+def _model_client(parse):
+    """Fake OpenAI-compatible client exposing beta.chat.completions.parse."""
+    return SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(parse=parse))))
+
+
+def _parsed(value):
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(parsed=value))])
+
+
 @pytest.fixture
 def repository(tmp_path):
     return TaskRepository(tmp_path / "agent-tasks.sqlite3")
@@ -162,20 +171,20 @@ def test_mocked_structured_model_success_uses_ai_mode(tools):
         task_reference=None,
         needs_clarification=False,
     )
-    parse = Mock(return_value=SimpleNamespace(output_parsed=intent))
-    client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
+    parse = Mock(return_value=_parsed(intent))
+    client = _model_client(parse)
     result = Orchestrator(tools, api_key="test-key", model_client=client).handle("Please create a task")
 
     assert result["mode"] == "ai"
     assert result["task"].title == "Model-created task"
     parse.assert_called_once()
     assert parse.call_args.kwargs["model"] == "gpt-4o-mini"
-    assert parse.call_args.kwargs["text_format"] is AssistantIntent
+    assert parse.call_args.kwargs["response_format"] is AssistantIntent
 
 
 def test_model_error_falls_back_without_repeating_a_write(tools):
     parse = Mock(side_effect=TimeoutError("private provider detail"))
-    client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
+    client = _model_client(parse)
     result = Orchestrator(tools, api_key="test-key", model_client=client).handle(
         "add call home tomorrow"
     )
@@ -188,8 +197,8 @@ def test_model_error_falls_back_without_repeating_a_write(tools):
 
 
 def test_invalid_model_intent_falls_back_and_openai_configuration_is_bounded(tools):
-    invalid = SimpleNamespace(output_parsed={"action": "create", "title": ""})
-    client = SimpleNamespace(responses=SimpleNamespace(parse=Mock(return_value=invalid)))
+    invalid = _parsed({"action": "create", "title": ""})
+    client = _model_client(Mock(return_value=invalid))
     result = Orchestrator(tools, api_key="test-key", model_client=client).handle("add task buy bread")
 
     assert result["mode"] == "fallback"
@@ -209,8 +218,8 @@ def test_sdk_client_uses_bounded_timeout_and_disables_retries(tools, monkeypatch
         task_reference=None,
         needs_clarification=True,
     )
-    parse = Mock(return_value=SimpleNamespace(output_parsed=intent))
-    client = SimpleNamespace(responses=SimpleNamespace(parse=parse))
+    parse = Mock(return_value=_parsed(intent))
+    client = _model_client(parse)
     constructor = Mock(return_value=client)
     monkeypatch.setattr("openai.OpenAI", constructor)
 

@@ -98,10 +98,11 @@ class Orchestrator:
                 timeout=self.MODEL_TIMEOUT_SECONDS,
                 max_retries=0,
             )
-        responses = getattr(client, "responses")
-        result = responses.parse(
+        # Chat Completions structured output works with OpenAI and with
+        # OpenAI-compatible providers such as Gemini (set OPENAI_BASE_URL).
+        result = client.beta.chat.completions.parse(
             model=self._model,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": (
@@ -115,9 +116,9 @@ class Orchestrator:
                     "content": f"UTC date: {self._today_provider().isoformat()}\nRequest: {message}",
                 },
             ],
-            text_format=AssistantIntent,
+            response_format=AssistantIntent,
         )
-        parsed = getattr(result, "output_parsed", None)
+        parsed = result.choices[0].message.parsed if result.choices else None
         if parsed is None:
             raise ValueError("No structured intent was returned")
         return self._validate_intent(parsed)
