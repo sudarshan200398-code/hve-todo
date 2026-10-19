@@ -36,6 +36,28 @@ class AssistantIntent(BaseModel):
     needs_clarification: bool
 
 
+_INTENT_KEYS = ("action", "title", "due_date", "priority", "task_reference", "needs_clarification")
+_ACTION_SYNONYMS = {"add": "create", "new": "create", "remind": "create", "edit": "update", "change": "update",
+                    "done": "complete", "finish": "complete", "remove": "delete", "next": "suggest"}
+
+
+def _normalize_model_intent(raw: dict) -> dict:
+    """Tolerate small differences between providers before strict validation."""
+    intent = {key: raw.get(key) for key in _INTENT_KEYS}
+    action = str(intent["action"] or "unknown").strip().lower()
+    intent["action"] = _ACTION_SYNONYMS.get(action, action)
+    priority = intent["priority"]
+    if isinstance(priority, str):
+        priority = priority.strip().lower()
+        priority = {"medium": "normal", "urgent": "high"}.get(priority, priority)
+        intent["priority"] = priority or None
+    for key in ("title", "due_date", "task_reference"):
+        if isinstance(intent[key], str) and not intent[key].strip():
+            intent[key] = None
+    intent["needs_clarification"] = bool(intent["needs_clarification"])
+    return intent
+
+
 class Orchestrator:
     """Route a user request through optional model extraction and safe fallback."""
 
@@ -133,8 +155,8 @@ class Orchestrator:
         if not content:
             raise ValueError("No structured intent was returned")
         parsed = json.loads(content)
-        if isinstance(parsed, dict) and parsed.get("priority") == "medium":
-            parsed["priority"] = "normal"
+        if isinstance(parsed, dict):
+            parsed = _normalize_model_intent(parsed)
         if (
             isinstance(parsed, dict)
             and parsed.get("action") == "create"

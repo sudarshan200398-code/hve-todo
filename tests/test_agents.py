@@ -244,3 +244,12 @@ def test_urgent_wording_sets_high_priority_when_model_omits_it(tools):
     )
     assert result["mode"] == "ai"
     assert result["task"].priority == "high"
+
+
+def test_model_reply_with_missing_keys_and_synonyms_is_accepted(tools):
+    content = {"action": "add", "title": "call mom", "priority": "Medium", "extra": "ignored"}
+    parse = Mock(return_value=_parsed(content))
+    result = Orchestrator(tools, api_key="test-key", model_client=_model_client(parse)).handle("add call mom")
+    assert result["mode"] == "ai"
+    assert result["task"].title == "call mom"
+    assert result["task"].priority == "normal"
