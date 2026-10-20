@@ -11,3 +11,6 @@ __pycache__/
 coverage.xml
 htmlcov/
 .scannerwork/
+
+# Azure deploy package
+app.zip

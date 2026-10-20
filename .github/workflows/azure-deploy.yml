@@ -1,0 +1,32 @@
+name: Deploy to Azure App Service
+
+# Runs on demand from the Actions tab. To deploy on every push, add:
+#   push:
+#     branches: [main]
+on:
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: hve-todo-sudarshan   # must match the -AppName used in deploy.ps1
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run tests before deploying
+        run: |
+          pip install -r requirements.txt
+          python -m pytest -q
+
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .
